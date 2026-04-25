@@ -16,9 +16,10 @@
 - [Arquitetura e Stacks Escolhidas](#-arquitetura-e-stacks-escolhidas)
 - [Fluxo de Funcionamento](#-fluxo-de-funcionamento)
 - [Como Configurar os Serviços Externos](#-como-configurar-os-serviços-externos)
-  - [1. Google Cloud Console (Agenda)](#1-google-cloud-console-agenda)
-  - [2. Supabase (Banco de Dados)](#2-supabase-banco-de-dados)
-  - [3. Evolution API (WhatsApp)](#3-evolution-api-whatsapp)
+  - [1. Tailscale (Túnel HTTPS)](#1-tailscale-túnel-https)
+  - [2. Google Cloud Console (Agenda)](#2-google-cloud-console-agenda)
+  - [3. Supabase (Banco de Dados)](#3-supabase-banco-de-dados)
+  - [4. Evolution API (WhatsApp)](#4-evolution-api-whatsapp)
 - [Como Rodar o Projeto Localmente](#-como-rodar-o-projeto-localmente)
 - [Como Contribuir](#-como-contribuir)
 - [Licença](#-licença)
@@ -48,6 +49,7 @@ O projeto foi construído pensando em simplicidade, manutenibilidade e baixo cus
 | **Supabase** | Backend-as-a-Service (BaaS) open-source baseado em PostgreSQL. | Oferece banco de dados robusto em nuvem gratuito (ótimo para projetos acadêmicos) e possui um *Connection Pooler* IPv4 nativo. | Armazena Usuários, Tokens Criptografados do Google, Eventos Sincronizados e os Alertas Agendados. |
 | **Evolution API** | API open-source para integração com o WhatsApp via QR Code. | Gratuita, roda em Docker próprio e não depende da API Oficial paga da Meta, ideal para microempreendedores. | Responsável pelo envio real das mensagens no WhatsApp dos usuários. |
 | **Google Calendar API** | API oficial da Google para gerenciar agendas. | É a ferramenta de agenda mais utilizada no mundo corporativo e pessoal. | Fornece a fonte da verdade dos eventos diários do host. |
+| **Tailscale** | VPN mesh que cria um túnel HTTPS seguro para a máquina local. | Elimina a necessidade de abrir portas no roteador ou contratar um servidor na nuvem. Fornece HTTPS automático via certificado MagicDNS, que é obrigatório para o callback do Google OAuth. | Expõe a aplicação de forma segura para a internet a partir de uma máquina local. |
 
 ---
 
@@ -94,25 +96,55 @@ sequenceDiagram
 
 ## ⚙️ Como Configurar os Serviços Externos
 
-Para rodar este projeto, você precisa de credenciais de três serviços diferentes.
+Para rodar este projeto, você precisa configurar quatro serviços. Comece pelo Tailscale, pois a URL gerada por ele é necessária para configurar o Google OAuth.
 
-### 1. Google Cloud Console (Agenda)
+### 1. Tailscale (Túnel HTTPS)
+
+O Tailscale é o que torna possível acessar a aplicação de fora da sua rede local e fornece o HTTPS obrigatório exigido pelo callback do Google OAuth.
+
+**Por que não usar apenas `localhost`?**
+O Google recusa cadastrar `http://localhost` como URI de callback OAuth em produção. O Tailscale resolve isso expondo sua máquina com um domínio HTTPS real (ex: `https://seu-pc.tailbc4e69.ts.net`), sem precisar de servidor na nuvem ou abrir portas no roteador.
+
+**Setup:**
+1. Instale o Tailscale na sua máquina: [tailscale.com/download](https://tailscale.com/download).
+2. Faça login com sua conta Google ou GitHub.
+3. Após o login, sua máquina receberá um domínio MagicDNS (ex: `seu-pc.tailXXXX.ts.net`). Anote esse endereço.
+4. Ative o HTTPS nativo do Tailscale:
+   ```bash
+   tailscale cert $(tailscale status --json | python3 -c "import sys,json;print(json.load(sys.stdin)['Self']['DNSName'].strip('.'))")
+   ```
+5. Configure o Tailscale Serve para redirecionar o tráfego HTTPS externo para a porta 8000 da sua aplicação:
+   ```bash
+   tailscale serve https / http://localhost:8000
+   ```
+6. Verifique que está funcionando com:
+   ```bash
+   tailscale serve status
+   ```
+
+> [!NOTE]
+> O Tailscale roda no **sistema operacional host**, não como um container Docker. Ele atua como um proxy reverso que intercepta o tráfego HTTPS antes que ele chegue ao Docker.
+
+### 2. Google Cloud Console (Agenda)
 1. Acesse o [Google Cloud Console](https://console.cloud.google.com/).
 2. Crie um projeto novo.
 3. Vá em **APIs & Services > Library** e ative a **Google Calendar API**.
 4. Vá em **OAuth consent screen**, configure como "External", preencha os dados e adicione os escopos de `.../auth/calendar.readonly`, `email` e `profile`.
 5. Em **Credentials**, crie um **OAuth client ID** (tipo Web Application).
-6. Adicione as URIs de redirecionamento (ex: `http://localhost:8000/oauth/callback`).
+6. Adicione as URIs de redirecionamento usando a URL do Tailscale:
+   ```
+   https://seu-pc.tailXXXX.ts.net/oauth/callback
+   ```
 7. Baixe o JSON gerado. Copie o conteúdo dele e cole na variável `GOOGLE_CREDENTIALS_JSON` do seu `.env`.
 
-### 2. Supabase (Banco de Dados)
+### 3. Supabase (Banco de Dados)
 1. Crie uma conta/projeto no [Supabase](https://supabase.com/).
 2. Vá em **Project Settings > Database** e desça até **Connection Pooler**.
 3. Ative o Connection Pooler (para obter um Host IPv4 que o Docker consiga acessar) e copie o Host (`aws-X...pooler.supabase.com`) e Porta (`6543`).
 4. Crie as tabelas necessárias no SQL Editor (o projeto necessita de tabelas para `users`, `events`, e `scheduled_alerts` no schema `stayiq`).
 5. Preencha as variáveis `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_NAME` e `PASSWORD_SUPABASE` no seu `.env`.
 
-### 3. Evolution API (WhatsApp)
+### 4. Evolution API (WhatsApp)
 1. O docker-compose do projeto já sobe a Evolution API.
 2. Acesse a API na porta configurada (ex: `http://localhost:8080`) usando seu `EVOLUTION_API_KEY`.
 3. Crie uma nova instância através do endpoint de create instance.
@@ -125,6 +157,7 @@ Para rodar este projeto, você precisa de credenciais de três serviços diferen
 
 ### Pré-requisitos
 - **Docker** e **Docker Compose** instalados.
+- **Tailscale** instalado e configurado no sistema host (ver [seção de setup](#1-tailscale-túnel-https)).
 - Arquivo `.env` corretamente configurado na raiz do projeto.
 
 ### 1. Configure o arquivo `.env`
@@ -152,8 +185,8 @@ EVOLUTION_DB_USER=evolution
 EVOLUTION_DB_PASSWORD=evolution
 EVOLUTION_DB_NAME=evolution_db
 
-# Google OAuth
-GOOGLE_REDIRECT_URI=http://localhost:8000/oauth/callback
+# Google OAuth (use sua URL do Tailscale para HTTPS real)
+GOOGLE_REDIRECT_URI=https://seu-pc.tailXXXX.ts.net/oauth/callback
 GOOGLE_CREDENTIALS_JSON='{
     "web": {
         "client_id": "seu_client_id",

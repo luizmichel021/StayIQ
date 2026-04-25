@@ -68,7 +68,7 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - evolution_postgres
+      - evolution_api
     env_file:
       - .env
     environment:
