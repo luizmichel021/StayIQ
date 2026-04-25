@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StayIQ — Configure seu WhatsApp</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <div class="glass-card setup-card">
+
+            <div class="setup-icon">📱</div>
+            <h1>Quase lá!</h1>
+            <p class="setup-subtitle">
+                Para receber alertas de check-in no WhatsApp, precisamos do seu número.
+            </p>
+
+            {% if error %}
+            <div class="alert-error">{{ error }}</div>
+            {% endif %}
+
+            <form action="/setup" method="post" class="setup-form">
+                <div class="input-group">
+                    <label for="phone">Número do WhatsApp</label>
+                    <div class="input-wrapper">
+                        <span class="input-icon">🇧🇷</span>
+                        <input
+                            type="tel"
+                            id="phone"
+                            name="phone"
+                            placeholder="5511999999999"
+                            pattern="[0-9]{12,13}"
+                            required
+                            autocomplete="tel"
+                        >
+                    </div>
+                    <small class="input-hint">Formato: código do país + DDD + número (sem espaços ou traços)</small>
+                </div>
+
+                <button type="submit" class="btn-primary" id="btn-setup-submit">
+                    <span>Salvar e continuar</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </button>
+            </form>
+
+            <a href="/setup/skip" class="setup-skip">Pular por agora →</a>
+        </div>
+    </div>
+</body>
+</html>

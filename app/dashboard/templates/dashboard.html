@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard — StayIQ</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-container dashboard-container">
+
+        <header class="dash-header-compact">
+            <button class="btn-brand-menu" onclick="toggleUserMenu()">
+                <div class="dash-brand">
+                    <span class="brand-icon">🏠</span>
+                    <span class="brand-name">StayIQ</span>
+                    <span class="brand-divider">|</span>
+                    <div class="brand-user-group">
+                        <span class="brand-user">{{ user_name }}</span>
+                        <span class="brand-email">{{ email }}</span>
+                    </div>
+                </div>
+                <span class="menu-arrow" id="user-menu-arrow">▼</span>
+            </button>
+            
+            <div class="user-menu-content" id="user-menu-content" style="display: none;">
+                <div class="user-actions-grid">
+                    <a href="/logout" class="btn-ghost-sm">Sair</a>
+                    <button class="btn-danger-outline-sm" onclick="confirmarDesvinculacao()">Desvincular Google</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- ── Seção de Configurações Retrátil ── -->
+        <div class="settings-container">
+            <button class="btn-settings-toggle" onclick="toggleSettings()">
+                <span class="icon">⚙️</span> Configurações do App
+                <span class="arrow" id="settings-arrow">▼</span>
+            </button>
+
+            <div class="settings-content" id="settings-content" style="display: none;">
+                <!-- Editar WhatsApp -->
+                <div class="setting-item-box">
+                    <div class="setting-item-header">
+                        <span class="icon">📱</span>
+                        <div>
+                            <h4>WhatsApp de Alerta</h4>
+                            <p id="phone-display-compact">
+                                {% if phone %} <strong>{{ phone }}</strong>
+                                {% else %}<span class="phone-missing">⚠️ Não configurado</span>{% endif %}
+                            </p>
+                        </div>
+                        <button class="btn-ghost-sm" onclick="toggleEditPhone()">✏️ Alterar</button>
+                    </div>
+                    
+                    <div class="phone-edit-panel" id="phone-edit-panel" style="display:none;">
+                        <form onsubmit="salvarTelefone(event)">
+                            <div class="input-group-inline">
+                                <input type="tel" id="phone-input" placeholder="5511999999999" value="{{ phone or '' }}" class="input-inline">
+                                <button type="submit" class="btn-primary-sm" id="btn-save-phone">Salvar</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Preferências de Alerta -->
+                <div class="setting-item-box">
+                    <div class="setting-item-header">
+                        <span class="icon">🔔</span>
+                        <div>
+                            <h4>Alertas Padrão</h4>
+                            <p class="prefs-subtitle">Escolha quais avisos nascem ativos</p>
+                        </div>
+                        <div class="prefs-status-compact" id="prefs-status">Salvo</div>
+                    </div>
+                    <div class="prefs-options-grid">
+                        {% set all_types = [('60min', '1h'), ('30min', '30m'), ('15min', '15m'), ('5min', '5m')] %}
+                        {% for type_id, label in all_types %}
+                        <label class="pref-chip">
+                            <input type="checkbox" class="pref-checkbox" value="{{ type_id }}" 
+                                   {% if type_id in default_prefs %}checked{% endif %}
+                                   onchange="salvarPreferencias()">
+                            <span class="chip-label">{{ label }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <main class="dash-main">
+            <div class="section-header">
+                <h2>📅 Próximos Eventos</h2>
+                <div class="section-header-right">
+                    <span class="section-badge">Próximos 7 dias</span>
+                    <button class="btn-sync" id="btn-sync" onclick="sincronizarAgora()" title="Sincronizar calendário agora">
+                        <span class="sync-icon" id="sync-icon">🔄</span>
+                        <span id="sync-label">Sincronizar</span>
+                    </button>
+                </div>
+            </div>
+
+            {% if not eventos %}
+            <div class="empty-state">
+                <div class="empty-icon">📭</div>
+                <p>Nenhum evento nos próximos 7 dias.</p>
+                <small>O sistema sincroniza automaticamente a cada 30 minutos.</small>
+            </div>
+            {% else %}
+                {% set alert_labels = {'60min': '1h antes', '30min': '30min antes', '15min': '15min antes', '5min': '5min antes'} %}
+                {% for evento in eventos %}
+                <div class="event-card">
+                    <div class="event-header">
+                        <div class="event-info">
+                            <h3 class="event-title">{{ evento.event_title }}</h3>
+                            <span class="event-time">🕒 {{ evento.event_start | format_dt }}</span>
+                        </div>
+                        <div class="event-countdown" data-start="{{ evento.event_start.isoformat() }}"></div>
+                    </div>
+                    <div class="alerts-list">
+                        <span class="alerts-label">Alertas agendados:</span>
+                        {% for alerta in evento.alertas %}
+                        <div class="alert-row {% if alerta.sent %}alert-sent{% endif %}">
+                            <div class="alert-info">
+                                <span class="alert-icon">{% if alerta.sent %}✅{% elif alerta.is_active %}🔔{% else %}🔕{% endif %}</span>
+                                <span class="alert-name">{{ alert_labels.get(alerta.alert_type, alerta.alert_type) }}</span>
+                                {% if alerta.sent %}<span class="alert-badge-sent">enviado</span>{% endif %}
+                            </div>
+                            {% if not alerta.sent %}
+                            <div class="alert-toggle">
+                                <button class="toggle-btn {% if alerta.is_active %}active{% endif %}" id="toggle-{{ alerta.alert_id }}" onclick="toggleAlert({{ alerta.alert_id }}, this)">
+                                    <span class="toggle-knob"></span>
+                                </button>
+                                <span class="toggle-label">{{ 'ON' if alerta.is_active else 'OFF' }}</span>
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            {% endif %}
+        </main>
+
+        <footer class="dash-footer">
+            <div class="footer-content">
+                <p>Desenvolvido por <strong>Luiz Michel Lima</strong></p>
+                <a href="https://github.com/luizmichel021" target="_blank" class="github-link" title="Ver no GitHub">
+                    <svg height="18" viewBox="0 0 16 16" width="18" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+                </a>
+            </div>
+            <span class="refresh-text-small">Sincronização automática a cada 30 min 🔄</span>
+        </footer>
+    </div>
+
+    <div class="modal-overlay" id="modal-unlink" style="display:none;">
+        <div class="modal-box">
+            <div class="modal-icon">⚠️</div>
+            <h3>Desvincular Conta Google?</h3>
+            <p>Apaga <strong>permanentemente</strong> seu usuário, eventos e alertas. Esta ação não pode ser desfeita.</p>
+            <div class="modal-actions">
+                <button class="btn-ghost" onclick="fecharModal()">Cancelar</button>
+                <form action="/unlink" method="post" style="display:inline;">
+                    <button type="submit" class="btn-danger" id="btn-confirm-unlink">Sim, desvincular</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function toggleAlert(alertId, btn) {
+            const novoEstado = !btn.classList.contains('active');
+            btn.disabled = true;
+            try {
+                const res = await fetch(`/api/toggle-alert/${alertId}`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ is_active: novoEstado })
+                });
+                if ((await res.json()).ok) {
+                    btn.classList.toggle('active', novoEstado);
+                    btn.nextElementSibling.textContent = novoEstado ? 'ON' : 'OFF';
+                    btn.closest('.alert-row').querySelector('.alert-icon').textContent = novoEstado ? '🔔' : '🔕';
+                }
+            } finally { btn.disabled = false; }
+        }
+
+        function toggleUserMenu() {
+            const content = document.getElementById('user-menu-content');
+            const arrow = document.getElementById('user-menu-arrow');
+            const isHidden = content.style.display === 'none';
+            content.style.display = isHidden ? 'block' : 'none';
+            arrow.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+        }
+
+        function toggleSettings() {
+            const content = document.getElementById('settings-content');
+            const arrow = document.getElementById('settings-arrow');
+            const isHidden = content.style.display === 'none';
+            content.style.display = isHidden ? 'block' : 'none';
+            arrow.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+        }
+
+        function toggleEditPhone() {
+            const p = document.getElementById('phone-edit-panel');
+            p.style.display = p.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function salvarTelefone(e) {
+            e.preventDefault();
+            const phone = document.getElementById('phone-input').value.trim();
+            const btn = document.getElementById('btn-save-phone');
+            btn.textContent = '...'; btn.disabled = true;
+            try {
+                const res = await fetch('/api/update-phone', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ phone })
+                });
+                if ((await res.json()).ok) {
+                    document.getElementById('phone-display-compact').innerHTML = `<strong>${phone}</strong>`;
+                    toggleEditPhone();
+                }
+            } finally { btn.textContent = 'Salvar'; btn.disabled = false; }
+        }
+
+
+        function confirmarDesvinculacao() { document.getElementById('modal-unlink').style.display = 'flex'; }
+        function fecharModal() { document.getElementById('modal-unlink').style.display = 'none'; }
+
+        // ── Salvar Preferências ──
+        async function salvarPreferencias() {
+            const status = document.getElementById('prefs-status');
+            const checks = document.querySelectorAll('.pref-checkbox:checked');
+            const alerts = Array.from(checks).map(c => c.value);
+            
+            status.innerHTML = '<span class="status-dot loading"></span> Salvando...';
+            status.style.opacity = '1';
+
+            try {
+                const res = await fetch('/api/preferences', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ alerts })
+                });
+                if ((await res.json()).ok) {
+                    status.innerHTML = '<span class="status-dot"></span> Salvo';
+                    setTimeout(() => { status.style.opacity = '0.6'; }, 2000);
+                }
+            } catch(e) {
+                status.innerHTML = '❌ Erro ao salvar';
+            }
+        }
+
+        // ── Sincronização Manual ──
+        async function sincronizarAgora() {
+            const btn   = document.getElementById('btn-sync');
+            const icon  = document.getElementById('sync-icon');
+            const label = document.getElementById('sync-label');
+            btn.disabled = true;
+            label.textContent = 'Sincronizando...';
+            icon.style.animation = 'spin 1s linear infinite';
+            try {
+                const res  = await fetch('/api/sync', { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                    label.textContent = `✅ ${data.eventos} evento(s)`;
+                    icon.style.animation = '';
+                    setTimeout(() => window.location.reload(), 1200);
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch(e) {
+                icon.style.animation = '';
+                label.textContent = '❌ Erro';
+                btn.disabled = false;
+                setTimeout(() => { label.textContent = 'Sincronizar'; }, 2500);
+            }
+        }
+
+        function atualizarCountdowns() {
+            document.querySelectorAll('.event-countdown[data-start]').forEach(el => {
+                const diff = new Date(el.dataset.start) - new Date();
+                if (diff <= 0) { el.innerHTML = '<span class="countdown-now">Agora</span>'; return; }
+                const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
+                const cls = h === 0 ? 'urgent' : '';
+                el.innerHTML = h > 24
+                    ? `<span class="countdown">em ${Math.floor(h/24)}d ${h%24}h</span>`
+                    : `<span class="countdown ${cls}">em ${h > 0 ? h+'h ' : ''}${m}min</span>`;
+            });
+        }
+        atualizarCountdowns();
+        setInterval(atualizarCountdowns, 30000);
+    </script>
+</body>
+</html>
